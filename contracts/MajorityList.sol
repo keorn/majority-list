@@ -135,7 +135,7 @@ contract MajorityList {
     }
 
     modifier freeValidatorSlots() {
-        if (validatorsList.length < maxValidators) _; throw;
+        if (validatorsList.length >= maxValidators) throw; _;
     }
 
     modifier hasHighSupport(address validator) {
@@ -147,7 +147,7 @@ contract MajorityList {
     }
 
     modifier onlyValidator() {
-        if (highSupport(msg.sender)) _; throw;
+        if (!highSupport(msg.sender)) throw; _;
     }
 
     modifier notVoted(address validator) {
