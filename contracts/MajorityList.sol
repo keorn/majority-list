@@ -5,6 +5,7 @@ pragma solidity ^0.4.8;
 // Addresses supported by more than half of the existing validators are the validators.
 // Both reporting functions simply remove support.
 contract MajorityList {
+    event ValidatorSet(bool indexed added, address indexed validator);
     event Report(address indexed reporter, address indexed reported, bool indexed malicious);
     event Support(address indexed supporter, address indexed supported, bool indexed added);
 
@@ -47,6 +48,7 @@ contract MajorityList {
                 validatorsStatus[validator].support.voted[supporter] = true;
                 Support(supporter, validator, true);
             }
+            ValidatorSet(true, validator);
         }
     }
 
@@ -77,7 +79,7 @@ contract MajorityList {
     }
 
     // Called when a validator should be removed.
-    function reportBenign(address validator) onlyValidator {
+    function reportBenign(address validator) onlyValidator hasHighSupport(validator) {
         Report(msg.sender, validator, false);
     }
 
@@ -102,6 +104,7 @@ contract MajorityList {
     function addValidator(address validator) private hasHighSupport(validator) {
         validatorsStatus[validator].index = validatorsList.length;
         validatorsList.push(validator);
+        ValidatorSet(true, validator);
     }
 
     // Remove a validator without enough support.
@@ -120,6 +123,7 @@ contract MajorityList {
         for (uint i = 0; i < validatorsList.length; i++) {
             removeSupport(validator, validatorsList[i]);
         }
+        ValidatorSet(false, validator);
     }
 
     function highSupport(address validator) constant returns (bool) {

@@ -1,46 +1,63 @@
 var MajorityList = artifacts.require("../contracts/MajorityList.sol");
 
+// testrpc --account 0xe00a3d4e0ed5638fde85df50739f767c7d85d72a7d1a5548f21ed7f0d05b90c1,99999999999999999999 --account 0xb8b9b0006a8a353836aa296af16b1c92aa0a2b0569d1d7fb1fac7f25dbbccba2,99999999999999999999 --account 0x9856d83361e3ef6f594f25ee471416cf6a7d1c55fe777f42597243c0aa2c8fa9,99999999999999999999
+
 contract('MajorityList', function(accounts) {
   it("should contain the first validator", function() {
     return MajorityList.deployed().then(function(instance) {
       return instance.getValidators.call();
     }).then(function(list) {
-      assert.equal(list.valueOf(), ["0xF5777f8133aAe2734396ab1d43ca54aD11BFB737"], "incorrect validators");
+      assert.equal(list.valueOf()[0], accounts[0], "incorrect validators");
     });
   });
-  it("should send coin correctly", function() {
-    var meta;
 
-    // Get initial balances of first and second account.
-    var account_one = accounts[0];
-    var account_two = accounts[1];
-
-    var account_one_starting_balance;
-    var account_two_starting_balance;
-    var account_one_ending_balance;
-    var account_two_ending_balance;
-
-    var amount = 10;
-
+  it("should get high support", function() {
     return MajorityList.deployed().then(function(instance) {
-      meta = instance;
-      return meta.getBalance.call(account_one);
-    }).then(function(balance) {
-      account_one_starting_balance = balance.toNumber();
-      return meta.getBalance.call(account_two);
-    }).then(function(balance) {
-      account_two_starting_balance = balance.toNumber();
-      return meta.sendCoin(account_two, amount, {from: account_one});
-    }).then(function() {
-      return meta.getBalance.call(account_one);
-    }).then(function(balance) {
-      account_one_ending_balance = balance.toNumber();
-      return meta.getBalance.call(account_two);
-    }).then(function(balance) {
-      account_two_ending_balance = balance.toNumber();
-
-      assert.equal(account_one_ending_balance, account_one_starting_balance - amount, "Amount wasn't correctly taken from the sender");
-      assert.equal(account_two_ending_balance, account_two_starting_balance + amount, "Amount wasn't correctly sent to the receiver");
+      return instance.getSupport.call(accounts[0]);
+    }).then(function(result) {
+      assert.equal(result.toNumber(), 1, "first should support itself");
     });
   });
+
+  it("should get low support", function() {
+    return MajorityList.deployed().then(function(instance) {
+      return instance.getSupport.call(accounts[1]);
+    }).then(function(result) {
+      assert.equal(result.toNumber(), 0, "first should support itself");
+    });
+  });
+
+  it("should judge validator", function() {
+    return MajorityList.deployed().then(function(instance) {
+      return instance.highSupport.call(accounts[0]);
+    }).then(function(result) {
+      assert.equal(result.valueOf(), true, "should have high support");
+    });
+  });
+
+  it("should judge not a validator", function() {
+    return MajorityList.deployed().then(function(instance) {
+      return instance.highSupport.call(accounts[1]);
+    }).then(function(result) {
+      assert.equal(result.valueOf(), false, "should have low support");
+    });
+  });
+
+  it("should add a supported address", function() {
+    return MajorityList.deployed().then(function(instance) {
+      return instance.addSupport(accounts[1]);
+    }).then(function(result) {
+      assert.equal(result.logs[0].event, "0xf5777f8133aae2734396ab1d43ca54ad11bfb737", "support log not present");
+    });
+  });
+
+  it("should event on benign misbehaviour report", function() {
+    return MajorityList.deployed().then(function(instance) {
+      return instance.reportBenign(accounts[0]);
+    }).then(function(result) {
+      assert.equal(result.logs[0].event, "0xf5777f8133aae2734396ab1d43ca54ad11bfb737", "report log not present");
+    });
+  });
+
+
 });
