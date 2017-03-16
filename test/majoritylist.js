@@ -53,9 +53,9 @@ contract('MajorityList', function(accounts) {
 
   it("should event on benign misbehaviour report", function() {
     return MajorityList.deployed().then(function(instance) {
-      return instance.reportBenign(accounts[0]);
+      return instance.reportBenign(accounts[0], {from: accounts[0]});
     }).then(function(result) {
-      assert.equal(result.logs[0].event, "0xf5777f8133aae2734396ab1d43ca54ad11bfb737", "report log not present");
+      assert.equal(result.logs[0].event, "Report", "report log not present");
     });
   });
 
