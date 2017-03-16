@@ -44,21 +44,33 @@ contract('MajorityList', function(accounts) {
   });
 
   it("should add a supported address", function() {
+		var validators;
     return MajorityList.deployed().then(function(instance) {
-      return instance.addSupport(accounts[1]);
+			validators = instance;
+      return validators.addSupport(accounts[1]);
     }).then(function(result) {
       assert.equal(result.logs[0].event, "ValidatorSet", "validator alteration log not present");
       assert.equal(result.logs[1].event, "Support", "support log not present");
-    });
+    }).then(function() {
+			return validators.getValidators.call();
+		}).then(function(list) {
+			assert.equal(list.valueOf()[1], accounts[1], "second validator not present");
+		}).then(function() {
+			return validators.getSupport.call(accounts[1]);
+		}).then(function(support) {
+			assert.equal(support.toNumber(), 2, "second validator should support itself");
+		}).then(function() {
+			return validators.getSupport.call(accounts[0]);
+		}).then(function(support) {
+			assert.equal(support.toNumber(), 1, "first validator should not be supported by the added validator");
+		});
   });
 
   it("should event on benign misbehaviour report", function() {
     return MajorityList.deployed().then(function(instance) {
-      return instance.reportBenign(accounts[1]);
+      return instance.reportBenign(accounts[0], { "from": accounts[0] });
     }).then(function(result) {
       assert.equal(result.logs[0].event, "Report", "report log not present");
     });
   });
-
-
 });

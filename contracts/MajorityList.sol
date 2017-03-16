@@ -72,7 +72,7 @@ contract MajorityList {
     }
 
     // Called when a validator should be removed.
-    function reportMalicious(address validator) onlyValidator {
+    function reportMalicious(address validator) onlyValidator hasHighSupport(validator) {
         removeSupport(msg.sender, validator);
         Report(msg.sender, validator, true);
         removeValidator(validator);
@@ -101,15 +101,21 @@ contract MajorityList {
     }
 
     // Add the validator if supported by majority.
+    // Since the number of validators increases it is possible to some fall below the threshold.
     function addValidator(address validator) private hasHighSupport(validator) {
         validatorsStatus[validator].index = validatorsList.length;
         validatorsList.push(validator);
+        // New validator should support itself.
+        validatorsStatus[validator].support.votes++;
+        validatorsStatus[validator].support.voted[validator] = true;
         ValidatorSet(true, validator);
     }
 
     // Remove a validator without enough support.
-    function removeValidator(address validator) private hasLowSupport(validator) {
+    // Can be called to clean low support validators after making the list longer.
+    function removeValidator(address validator) hasLowSupport(validator) {
         uint removedIndex = validatorsStatus[validator].index;
+        // Can not remove the last validator.
         uint lastIndex = validatorsList.length-1;
         address lastValidator = validatorsList[lastIndex];
         // Override the removed validator with the last one.
