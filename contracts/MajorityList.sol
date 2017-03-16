@@ -14,22 +14,24 @@ contract MajorityList {
         // Validator addresses which supported the validator.
         SupportTracker support;
     }
-    
+
     // Tracks the amount of support for a given validator.
     struct SupportTracker {
         uint votes;
         // Keeps track of who voted for given address, prevent double voting.
         mapping(address => bool) voted;
     }
-    
+
     // Support can not be added once this number of validators is reached.
     uint maxValidators = 30;
-	// Accounts used for testing: "0".sha3() and "1".sha3()
-    address[] public validatorsList = [0x70220d548dbbcdc9b698df9d561f564f5787963d];
+    // Accounts used for testing: "0".sha3() and "1".sha3()
+    address[] public validatorsList;
     mapping(address => ValidatorStatus) validatorsStatus;
-    
+
     // Each validator is initially supported by all others.
     function MajorityList() {
+        validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
+
         if (validatorsList.length > maxValidators) { throw; }
 
         for (uint i = 0; i < validatorsList.length; i++) {
@@ -52,20 +54,19 @@ contract MajorityList {
     function getValidators() constant returns (address[]) {
         return validatorsList;
     }
-    
+
     // Find the total support for a given address.
     function getSupport(address validator) constant returns (uint) {
         return validatorsStatus[validator].support.votes;
     }
-    
+
     // Vote to include a validator.
     function addSupport(address validator) onlyValidator notVoted(validator) freeValidatorSlots {
         newStatus(validator);
         validatorsStatus[validator].support.votes++;
         addValidator(validator);
         validatorsStatus[validator].support.voted[msg.sender] = true;
-        //Support(msg.sender, validator, true);
-        return;
+        Support(msg.sender, validator, true);
     }
 
     // Called when a validator should be removed.
@@ -74,7 +75,7 @@ contract MajorityList {
         Report(msg.sender, validator, true);
         removeValidator(validator);
     }
-    
+
     // Called when a validator should be removed.
     function reportBenign(address validator) onlyValidator {
         Report(msg.sender, validator, false);
@@ -84,11 +85,11 @@ contract MajorityList {
     function removeSupport(address sender, address validator) private hasVotes(sender, validator) {
         validatorsStatus[validator].support.votes--;
         validatorsStatus[validator].support.voted[sender] = false;
-        Support(sender, validator, false);
+        //Support(sender, validator, false);
         // Remove validator from the list if there is not enough support.
         removeValidator(validator);
     }
-    
+
     // Add a status tracker for unknown validator.
     function newStatus(address validator) private hasNoVotes(validator) {
         validatorsStatus[validator] = ValidatorStatus({
@@ -120,35 +121,35 @@ contract MajorityList {
             removeSupport(validator, validatorsList[i]);
         }
     }
-    
+
     function highSupport(address validator) constant returns (bool) {
         return getSupport(validator) > validatorsList.length/2;
     }
-    
+
     modifier hasNoVotes(address validator) {
         if (validatorsStatus[validator].support.votes == 0) _;
     }
-    
+
     modifier freeValidatorSlots() {
         if (validatorsList.length < maxValidators) _; throw;
     }
-    
+
     modifier hasHighSupport(address validator) {
         if (highSupport(validator)) _;
     }
-    
+
     modifier hasLowSupport(address validator) {
         if (!highSupport(validator)) _;
     }
-    
+
     modifier onlyValidator() {
         if (highSupport(msg.sender)) _; throw;
     }
-    
+
     modifier notVoted(address validator) {
         if (validatorsStatus[validator].support.voted[msg.sender]) throw; _;
     }
-    
+
     modifier hasVotes(address sender, address validator) {
         if (validatorsStatus[validator].support.votes > 0
             && validatorsStatus[validator].support.voted[sender]) _;

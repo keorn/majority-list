@@ -5,7 +5,7 @@ contract('MajorityList', function(accounts) {
     return MajorityList.deployed().then(function(instance) {
       return instance.getValidators.call();
     }).then(function(list) {
-      assert.equal(list.valueOf(), ["0x70220d548dbbcdc9b698df9d561f564f5787963d"], "incorrect validators");
+      assert.equal(list.valueOf(), ["0xF5777f8133aAe2734396ab1d43ca54aD11BFB737"], "incorrect validators");
     });
   });
   it("should send coin correctly", function() {
