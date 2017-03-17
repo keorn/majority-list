@@ -14,14 +14,16 @@ contract MajorityList {
         bool isValidator;
         // Index in the validatorList.
         uint index;
-        // Validator addresses which supported the validator.
+        // Validator addresses which supported the address.
         SupportTracker support;
+        // Keeps track of the votes given out while the address is a validator.
+        address[] supported;
     }
 
-    // Tracks the amount of support for a given validator.
+    // Tracks the amount of support for a given address.
     struct SupportTracker {
         uint votes;
-        // Keeps track of who voted for given address, prevent double voting.
+        // Keeps track of who voted for a given address, prevent double voting.
         mapping(address => bool) voted;
     }
 
@@ -44,7 +46,8 @@ contract MajorityList {
                 index: i,
                 support: SupportTracker({
                     votes: validatorsList.length
-                })
+                }),
+                supported: validatorsList
             });
             for (uint j = 0; j < validatorsList.length; j++) {
                 address supporter = validatorsList[j];
@@ -69,8 +72,9 @@ contract MajorityList {
     function addSupport(address validator) onlyValidator notVoted(validator) freeValidatorSlots {
         newStatus(validator);
         validatorsStatus[validator].support.votes++;
-        addValidator(validator);
         validatorsStatus[validator].support.voted[msg.sender] = true;
+        validatorsStatus[msg.sender].supported.push(validator);
+        addValidator(validator);
         Support(msg.sender, validator, true);
     }
 
@@ -99,7 +103,8 @@ contract MajorityList {
         validatorsStatus[validator] = ValidatorStatus({
             isValidator: false,
             index: validatorsList.length,
-            support: SupportTracker({ votes: 0 })
+            support: SupportTracker({ votes: 0 }),
+            supported: new address[](0)
         });
     }
 
@@ -108,9 +113,11 @@ contract MajorityList {
     function addValidator(address validator) private isNotValidator(validator) hasHighSupport(validator) {
         validatorsStatus[validator].index = validatorsList.length;
         validatorsList.push(validator);
+        validatorsStatus[validator].isValidator = true;
         // New validator should support itself.
         validatorsStatus[validator].support.votes++;
         validatorsStatus[validator].support.voted[validator] = true;
+        validatorsStatus[validator].supported.push(validator);
         ValidatorSet(true, validator);
     }
 
@@ -128,10 +135,13 @@ contract MajorityList {
         delete validatorsList[lastIndex];
         validatorsList.length--;
         validatorsStatus[validator].index = 0;
+        validatorsStatus[validator].isValidator = false;
         // Remove all support given by the removed validator.
-        for (uint i = 0; i < validatorsList.length; i++) {
-            removeSupport(validator, validatorsList[i]);
+        address[] toRemove = validatorsStatus[validator].supported;
+        for (uint i = 0; i < toRemove.length; i++) {
+            removeSupport(validator, toRemove[i]);
         }
+        delete validatorsStatus[validator].supported;
         ValidatorSet(false, validator);
     }
 
