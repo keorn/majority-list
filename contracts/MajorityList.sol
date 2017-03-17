@@ -67,6 +67,10 @@ contract MajorityList {
     function getSupport(address validator) constant returns (uint) {
         return validatorsStatus[validator].support.votes;
     }
+    
+    function getSupported(address validator) constant returns (address[]) {
+        return validatorsStatus[validator].supported;
+    }
 
     // Vote to include a validator.
     function addSupport(address validator) onlyValidator notVoted(validator) freeValidatorSlots {
@@ -79,7 +83,7 @@ contract MajorityList {
     }
 
     // Called when a validator should be removed.
-    function reportMalicious(address validator) onlyValidator isValidator(validator) {
+    function reportMalicious(address validator) onlyValidator {
         removeSupport(msg.sender, validator);
         Report(msg.sender, validator, true);
     }
@@ -110,7 +114,7 @@ contract MajorityList {
 
     // Add the validator if supported by majority.
     // Since the number of validators increases it is possible to some fall below the threshold.
-    function addValidator(address validator) private isNotValidator(validator) hasHighSupport(validator) {
+    function addValidator(address validator) isNotValidator(validator) hasHighSupport(validator) {
         validatorsStatus[validator].index = validatorsList.length;
         validatorsList.push(validator);
         validatorsStatus[validator].isValidator = true;
@@ -123,7 +127,7 @@ contract MajorityList {
 
     // Remove a validator without enough support.
     // Can be called to clean low support validators after making the list longer.
-    function removeValidator(address validator) hasLowSupport(validator) {
+    function removeValidator(address validator) isValidator(validator) hasLowSupport(validator) {
         uint removedIndex = validatorsStatus[validator].index;
         // Can not remove the last validator.
         uint lastIndex = validatorsList.length-1;
@@ -134,6 +138,7 @@ contract MajorityList {
         validatorsStatus[lastValidator].index = removedIndex;
         delete validatorsList[lastIndex];
         validatorsList.length--;
+        // Reset validator status.
         validatorsStatus[validator].index = 0;
         validatorsStatus[validator].isValidator = false;
         // Remove all support given by the removed validator.
@@ -164,9 +169,9 @@ contract MajorityList {
     modifier onlyValidator() {
         if (!validatorsStatus[msg.sender].isValidator) throw; _;
     }
-
+    
     modifier isValidator(address someone) {
-        if (!validatorsStatus[someone].isValidator) throw; _;
+        if (validatorsStatus[someone].isValidator) _;
     }
 
     modifier isNotValidator(address someone) {

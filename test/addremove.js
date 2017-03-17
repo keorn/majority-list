@@ -24,6 +24,10 @@ contract('MajorityList', function(accounts) {
       return validators.getSupport.call(accounts[1]);
     }).then(function(result) {
       assert.equal(result.toNumber(), 0, "second should no longer have support");
+			return validators.getValidators.call();
+    }).then(function(list) {
+      assert.equal(list.valueOf()[0], accounts[0], "incorrect validator");
+      assert.equal(list.valueOf().length, 1, "wrong number of validators");
     });
   });
 });
