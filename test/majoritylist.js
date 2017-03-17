@@ -66,24 +66,6 @@ contract('MajorityList', function(accounts) {
 		});
   });
 
-  it("should remove an unsupported address", function() {
-		var validators;
-    return MajorityList.deployed().then(function(instance) {
-			validators = instance;
-      return validators.addSupport(accounts[1]);
-		}).then(function(result) {
-			return validators.addSupport(accounts[0], { "from": accounts[1] });
-		}).then(function(result) {
-      assert.equal(result.logs[0].event, "Support", "support log not present");
-		});/*
-			return validators.reportMalicious(accounts[1], { "from": accounts[0] });
-    }).then(function(result) {
-      assert.equal(result.logs[0].event, "ValidatorSet", "validator alteration log not present");
-      assert.equal(result.logs[1].event, "Support", "support log not present");
-    });
-		*/
-  });
-
   it("should event on benign misbehaviour report", function() {
     return MajorityList.deployed().then(function(instance) {
       return instance.reportBenign(accounts[0], { "from": accounts[0] });
