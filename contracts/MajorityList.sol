@@ -10,6 +10,8 @@ contract MajorityList {
     event Support(address indexed supporter, address indexed supported, bool indexed added);
 
     struct ValidatorStatus {
+        // Is this a validator.
+        bool isValidator;
         // Index in the validatorList.
         uint index;
         // Validator addresses which supported the validator.
@@ -38,6 +40,7 @@ contract MajorityList {
         for (uint i = 0; i < validatorsList.length; i++) {
             address validator = validatorsList[i];
             validatorsStatus[validator] = ValidatorStatus({
+                isValidator: true,
                 index: i,
                 support: SupportTracker({
                     votes: validatorsList.length
@@ -72,14 +75,13 @@ contract MajorityList {
     }
 
     // Called when a validator should be removed.
-    function reportMalicious(address validator) onlyValidator hasHighSupport(validator) {
+    function reportMalicious(address validator) onlyValidator isValidator(validator) {
         removeSupport(msg.sender, validator);
         Report(msg.sender, validator, true);
-        removeValidator(validator);
     }
 
     // Called when a validator should be removed.
-    function reportBenign(address validator) onlyValidator hasHighSupport(validator) {
+    function reportBenign(address validator) onlyValidator isValidator(validator) {
         Report(msg.sender, validator, false);
     }
 
@@ -87,7 +89,7 @@ contract MajorityList {
     function removeSupport(address sender, address validator) private hasVotes(sender, validator) {
         validatorsStatus[validator].support.votes--;
         validatorsStatus[validator].support.voted[sender] = false;
-        //Support(sender, validator, false);
+        Support(sender, validator, false);
         // Remove validator from the list if there is not enough support.
         removeValidator(validator);
     }
@@ -95,6 +97,7 @@ contract MajorityList {
     // Add a status tracker for unknown validator.
     function newStatus(address validator) private hasNoVotes(validator) {
         validatorsStatus[validator] = ValidatorStatus({
+            isValidator: false,
             index: validatorsList.length,
             support: SupportTracker({ votes: 0 })
         });
@@ -102,7 +105,7 @@ contract MajorityList {
 
     // Add the validator if supported by majority.
     // Since the number of validators increases it is possible to some fall below the threshold.
-    function addValidator(address validator) private hasHighSupport(validator) {
+    function addValidator(address validator) private isNotValidator(validator) hasHighSupport(validator) {
         validatorsStatus[validator].index = validatorsList.length;
         validatorsList.push(validator);
         // New validator should support itself.
@@ -136,14 +139,6 @@ contract MajorityList {
         return getSupport(validator) > validatorsList.length/2;
     }
 
-    modifier hasNoVotes(address validator) {
-        if (validatorsStatus[validator].support.votes == 0) _;
-    }
-
-    modifier freeValidatorSlots() {
-        if (validatorsList.length >= maxValidators) throw; _;
-    }
-
     modifier hasHighSupport(address validator) {
         if (highSupport(validator)) _;
     }
@@ -152,12 +147,28 @@ contract MajorityList {
         if (!highSupport(validator)) _;
     }
 
+    modifier freeValidatorSlots() {
+        if (validatorsList.length >= maxValidators) throw; _;
+    }
+
     modifier onlyValidator() {
-        if (!highSupport(msg.sender)) throw; _;
+        if (!validatorsStatus[msg.sender].isValidator) throw; _;
+    }
+
+    modifier isValidator(address someone) {
+        if (!validatorsStatus[someone].isValidator) throw; _;
+    }
+
+    modifier isNotValidator(address someone) {
+        if (!validatorsStatus[someone].isValidator) _;
     }
 
     modifier notVoted(address validator) {
         if (validatorsStatus[validator].support.voted[msg.sender]) throw; _;
+    }
+
+    modifier hasNoVotes(address validator) {
+        if (validatorsStatus[validator].support.votes == 0) _;
     }
 
     modifier hasVotes(address sender, address validator) {
