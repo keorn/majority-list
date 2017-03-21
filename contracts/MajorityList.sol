@@ -15,15 +15,19 @@ contract MajorityList {
         // Index in the validatorList.
         uint index;
         // Validator addresses which supported the address.
-        SupportTracker support;
+        VoteTracker support;
         // Keeps track of the votes given out while the address is a validator.
         address[] supported;
+        // Initial benign misbehaviour time tracker.
+        mapping(address => uint) firstBenign;
+        // Repeated benign misbehaviour counter.
+        VoteTracker benignMisbehaviour;
     }
 
     // Tracks the amount of support for a given address.
-    struct SupportTracker {
+    struct VoteTracker {
         uint votes;
-        // Keeps track of who voted for a given address, prevent double voting.
+        // Keeps track of who voted for a given address at a given block, prevent double voting.
         mapping(address => bool) voted;
     }
 
@@ -44,10 +48,11 @@ contract MajorityList {
             validatorsStatus[validator] = ValidatorStatus({
                 isValidator: true,
                 index: i,
-                support: SupportTracker({
+                support: VoteTracker({
                     votes: validatorsList.length
                 }),
-                supported: validatorsList
+                supported: validatorsList,
+                benignMisbehaviour: VoteTracker({ votes: 0 }),
             });
             for (uint j = 0; j < validatorsList.length; j++) {
                 address supporter = validatorsList[j];
@@ -67,7 +72,7 @@ contract MajorityList {
     function getSupport(address validator) constant returns (uint) {
         return validatorsStatus[validator].support.votes;
     }
-    
+
     function getSupported(address validator) constant returns (address[]) {
         return validatorsStatus[validator].supported;
     }
@@ -88,9 +93,45 @@ contract MajorityList {
         Report(msg.sender, validator, true);
     }
 
-    // Called when a validator should be removed.
+    // Report that a validator has misbehaved in a benign way.
     function reportBenign(address validator) onlyValidator isValidator(validator) {
+        firstBenign(validator);
+        repeatedBenign(validator);
         Report(msg.sender, validator, false);
+    }
+
+    // Find the total number of repeated misbehaviour votes.
+    function getRepeatedBenign(address validator) constant returns (uint) {
+        return validatorsStatus[validator].benignMisbehaviour.votes;
+    }
+
+    // Track the first benign misbehaviour.
+    function firstBenign(address validator) private hasNotBenignMisbehaved(validator) {
+        validatorsStatus[validator].firstBenign[msg.sender] = now;
+    }
+
+    // Report that a validator has been repeatedly misbehaving.
+    function repeatedBenign(address validator) private hasRepeatedlyBenignMisbehaved(validator) {
+        validatorsStatus[validator].benignMisbehaviour.votes++;
+        validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = true;
+        confirmedRepeatedBenign(validator);
+    }
+
+    // When enough long term benign misbehaviour votes have been seen, remove support.
+    function confirmedRepeatedBenign(address validator) private agreedOnRepeatedBenign(validator) {
+        validatorsStatus[validator].firstBenign[msg.sender] = 0;
+        validatorsStatus[validator].benignMisbehaviour.votes--;
+        validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = false;
+        removeSupport(msg.sender, validator);
+    }
+    
+    // Absolve a validator from a benign misbehaviour.
+    function absolveFirstBenign(address validator) hasBenignMisbehaved(validator) {
+        validatorsStatus[validator].firstBenign[msg.sender] = 0;
+        if (validatorsStatus[validator].benignMisbehaviour.voted[msg.sender]) {
+            validatorsStatus[validator].benignMisbehaviour.votes--;
+            validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = false;
+        }
     }
 
     // Remove support for a validator.
@@ -107,8 +148,9 @@ contract MajorityList {
         validatorsStatus[validator] = ValidatorStatus({
             isValidator: false,
             index: validatorsList.length,
-            support: SupportTracker({ votes: 0 }),
-            supported: new address[](0)
+            support: VoteTracker({ votes: 0 }),
+            supported: new address[](0),
+            benignMisbehaviour: VoteTracker({ votes: 0 })
         });
     }
 
@@ -154,12 +196,32 @@ contract MajorityList {
         return getSupport(validator) > validatorsList.length/2;
     }
 
+    function firstBenignReported(address validator) constant returns (uint) {
+        return validatorsStatus[validator].firstBenign[msg.sender];
+    }
+
     modifier hasHighSupport(address validator) {
         if (highSupport(validator)) _;
     }
 
     modifier hasLowSupport(address validator) {
         if (!highSupport(validator)) _;
+    }
+
+    modifier hasNotBenignMisbehaved(address validator) {
+        if (firstBenignReported(validator) == 0) _;
+    }
+
+    modifier hasBenignMisbehaved(address validator) {
+        if (firstBenignReported(validator) > 0) _;
+    }
+
+    modifier hasRepeatedlyBenignMisbehaved(address validator) {
+        if (firstBenignReported(validator) - now > 6 hours) _;
+    }
+
+    modifier agreedOnRepeatedBenign(address validator) {
+        if (getRepeatedBenign(validator) > validatorsList.length/2) _;
     }
 
     modifier freeValidatorSlots() {
@@ -169,7 +231,7 @@ contract MajorityList {
     modifier onlyValidator() {
         if (!validatorsStatus[msg.sender].isValidator) throw; _;
     }
-    
+
     modifier isValidator(address someone) {
         if (validatorsStatus[someone].isValidator) _;
     }
