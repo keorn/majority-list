@@ -5,6 +5,7 @@ pragma solidity ^0.4.8;
 // Addresses supported by more than half of the existing validators are the validators.
 // Both reporting functions simply remove support.
 contract MajorityList {
+    // EVENTS
     event ValidatorSet(bool indexed added, address indexed validator);
     event Report(address indexed reporter, address indexed reported, bool indexed malicious);
     event Support(address indexed supporter, address indexed supported, bool indexed added);
@@ -32,16 +33,19 @@ contract MajorityList {
     }
 
     // Support can not be added once this number of validators is reached.
-    uint maxValidators = 30;
-    // Accounts used for testing: "0".sha3() and "1".sha3()
+    uint public constant MAX_VALIDATORS = 30;
+    // Time after which the validators will report a validator as malicious.
+    uint public constant MAX_INACTIVITY = 6 hours;
+    // Current list of addresses entitled to participate in the consensus.
     address[] public validatorsList;
+    // Tracker of status for each address.
     mapping(address => ValidatorStatus) validatorsStatus;
 
     // Each validator is initially supported by all others.
     function MajorityList() {
         validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
 
-        if (validatorsList.length > maxValidators) { throw; }
+        if (validatorsList.length > MAX_VALIDATORS) { throw; }
 
         for (uint i = 0; i < validatorsList.length; i++) {
             address validator = validatorsList[i];
@@ -68,6 +72,8 @@ contract MajorityList {
         return validatorsList;
     }
 
+    // SUPPORT LOOKUP AND MANIPULATION
+
     // Find the total support for a given address.
     function getSupport(address validator) constant returns (uint) {
         return validatorsStatus[validator].support.votes;
@@ -78,7 +84,7 @@ contract MajorityList {
     }
 
     // Vote to include a validator.
-    function addSupport(address validator) onlyValidator notVoted(validator) freeValidatorSlots {
+    function addSupport(address validator) only_validator not_voted(validator) free_validator_slots {
         newStatus(validator);
         validatorsStatus[validator].support.votes++;
         validatorsStatus[validator].support.voted[msg.sender] = true;
@@ -87,14 +93,27 @@ contract MajorityList {
         Support(msg.sender, validator, true);
     }
 
+    // Remove support for a validator.
+    function removeSupport(address sender, address validator) private has_votes(sender, validator) {
+        validatorsStatus[validator].support.votes--;
+        validatorsStatus[validator].support.voted[sender] = false;
+        Support(sender, validator, false);
+        // Remove validator from the list if there is not enough support.
+        removeValidator(validator);
+    }
+
+    // MALICIOUS BEHAVIOUR HANDLING
+
     // Called when a validator should be removed.
-    function reportMalicious(address validator) onlyValidator {
+    function reportMalicious(address validator) only_validator {
         removeSupport(msg.sender, validator);
         Report(msg.sender, validator, true);
     }
 
+    // BENIGN MISBEHAVIOUR HANDLING
+
     // Report that a validator has misbehaved in a benign way.
-    function reportBenign(address validator) onlyValidator isValidator(validator) {
+    function reportBenign(address validator) only_validator is_validator(validator) {
         firstBenign(validator);
         repeatedBenign(validator);
         Report(msg.sender, validator, false);
@@ -106,27 +125,27 @@ contract MajorityList {
     }
 
     // Track the first benign misbehaviour.
-    function firstBenign(address validator) private hasNotBenignMisbehaved(validator) {
+    function firstBenign(address validator) private has_not_benign_misbehaved(validator) {
         validatorsStatus[validator].firstBenign[msg.sender] = now;
     }
 
     // Report that a validator has been repeatedly misbehaving.
-    function repeatedBenign(address validator) private hasRepeatedlyBenignMisbehaved(validator) {
+    function repeatedBenign(address validator) private has_repeatedly_benign_misbehaved(validator) {
         validatorsStatus[validator].benignMisbehaviour.votes++;
         validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = true;
         confirmedRepeatedBenign(validator);
     }
 
     // When enough long term benign misbehaviour votes have been seen, remove support.
-    function confirmedRepeatedBenign(address validator) private agreedOnRepeatedBenign(validator) {
+    function confirmedRepeatedBenign(address validator) private agreed_on_repeated_benign(validator) {
         validatorsStatus[validator].firstBenign[msg.sender] = 0;
         validatorsStatus[validator].benignMisbehaviour.votes--;
         validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = false;
         removeSupport(msg.sender, validator);
     }
-    
+
     // Absolve a validator from a benign misbehaviour.
-    function absolveFirstBenign(address validator) hasBenignMisbehaved(validator) {
+    function absolveFirstBenign(address validator) has_benign_misbehaved(validator) {
         validatorsStatus[validator].firstBenign[msg.sender] = 0;
         if (validatorsStatus[validator].benignMisbehaviour.voted[msg.sender]) {
             validatorsStatus[validator].benignMisbehaviour.votes--;
@@ -134,17 +153,10 @@ contract MajorityList {
         }
     }
 
-    // Remove support for a validator.
-    function removeSupport(address sender, address validator) private hasVotes(sender, validator) {
-        validatorsStatus[validator].support.votes--;
-        validatorsStatus[validator].support.voted[sender] = false;
-        Support(sender, validator, false);
-        // Remove validator from the list if there is not enough support.
-        removeValidator(validator);
-    }
+    // PRIVATE UTILITY FUNCTIONS
 
     // Add a status tracker for unknown validator.
-    function newStatus(address validator) private hasNoVotes(validator) {
+    function newStatus(address validator) private has_no_votes(validator) {
         validatorsStatus[validator] = ValidatorStatus({
             isValidator: false,
             index: validatorsList.length,
@@ -154,9 +166,11 @@ contract MajorityList {
         });
     }
 
+    // ENACTMENT FUNCTIONS (called when support gets out of line with the validator list)
+
     // Add the validator if supported by majority.
     // Since the number of validators increases it is possible to some fall below the threshold.
-    function addValidator(address validator) isNotValidator(validator) hasHighSupport(validator) {
+    function addValidator(address validator) is_not_validator(validator) has_high_support(validator) {
         validatorsStatus[validator].index = validatorsList.length;
         validatorsList.push(validator);
         validatorsStatus[validator].isValidator = true;
@@ -169,7 +183,7 @@ contract MajorityList {
 
     // Remove a validator without enough support.
     // Can be called to clean low support validators after making the list longer.
-    function removeValidator(address validator) isValidator(validator) hasLowSupport(validator) {
+    function removeValidator(address validator) is_validator(validator) has_low_support(validator) {
         uint removedIndex = validatorsStatus[validator].index;
         // Can not remove the last validator.
         uint lastIndex = validatorsList.length-1;
@@ -192,6 +206,8 @@ contract MajorityList {
         ValidatorSet(false, validator);
     }
 
+    // MODIFIERS
+
     function highSupport(address validator) constant returns (bool) {
         return getSupport(validator) > validatorsList.length/2;
     }
@@ -200,56 +216,61 @@ contract MajorityList {
         return validatorsStatus[validator].firstBenign[msg.sender];
     }
 
-    modifier hasHighSupport(address validator) {
+    modifier has_high_support(address validator) {
         if (highSupport(validator)) _;
     }
 
-    modifier hasLowSupport(address validator) {
+    modifier has_low_support(address validator) {
         if (!highSupport(validator)) _;
     }
 
-    modifier hasNotBenignMisbehaved(address validator) {
+    modifier has_not_benign_misbehaved(address validator) {
         if (firstBenignReported(validator) == 0) _;
     }
 
-    modifier hasBenignMisbehaved(address validator) {
+    modifier has_benign_misbehaved(address validator) {
         if (firstBenignReported(validator) > 0) _;
     }
 
-    modifier hasRepeatedlyBenignMisbehaved(address validator) {
-        if (firstBenignReported(validator) - now > 6 hours) _;
+    modifier has_repeatedly_benign_misbehaved(address validator) {
+        if (firstBenignReported(validator) - now > MAX_INACTIVITY) _;
     }
 
-    modifier agreedOnRepeatedBenign(address validator) {
+    modifier agreed_on_repeated_benign(address validator) {
         if (getRepeatedBenign(validator) > validatorsList.length/2) _;
     }
 
-    modifier freeValidatorSlots() {
-        if (validatorsList.length >= maxValidators) throw; _;
+    modifier free_validator_slots() {
+        if (validatorsList.length >= MAX_VALIDATORS) throw; _;
     }
 
-    modifier onlyValidator() {
+    modifier only_validator() {
         if (!validatorsStatus[msg.sender].isValidator) throw; _;
     }
 
-    modifier isValidator(address someone) {
+    modifier is_validator(address someone) {
         if (validatorsStatus[someone].isValidator) _;
     }
 
-    modifier isNotValidator(address someone) {
+    modifier is_not_validator(address someone) {
         if (!validatorsStatus[someone].isValidator) _;
     }
 
-    modifier notVoted(address validator) {
+    modifier not_voted(address validator) {
         if (validatorsStatus[validator].support.voted[msg.sender]) throw; _;
     }
 
-    modifier hasNoVotes(address validator) {
+    modifier has_no_votes(address validator) {
         if (validatorsStatus[validator].support.votes == 0) _;
     }
 
-    modifier hasVotes(address sender, address validator) {
+    modifier has_votes(address sender, address validator) {
         if (validatorsStatus[validator].support.votes > 0
             && validatorsStatus[validator].support.voted[sender]) _;
+    }
+
+    // Fallback function throws when called.
+    function() {
+        throw;
     }
 }
