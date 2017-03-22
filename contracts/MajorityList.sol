@@ -1,9 +1,13 @@
 pragma solidity ^0.4.8;
 
 // Existing validators can give support to addresses.
-// Once given support can be removed.
+// Support can not be added once MAX_VALIDATORS are present.
+// Once given, support can be removed.
 // Addresses supported by more than half of the existing validators are the validators.
-// Both reporting functions simply remove support.
+// Malicious behaviour causes support removal.
+// Benign misbehaviour causes supprt removal if its called again after MAX_INACTIVITY.
+// Benign misbehaviour can be absolved before being called the second time.
+
 contract MajorityList {
     // EVENTS
     event ValidatorSet(bool indexed added, address indexed validator);
