@@ -49,7 +49,7 @@ contract('MajorityList', function(accounts) {
 			validators = instance;
       return validators.addSupport(accounts[1]);
     }).then(function(result) {
-      assert.equal(result.logs[0].event, "ValidatorSet", "validator alteration log not present");
+      assert.equal(result.logs[0].event, "ValidatorsChanged", "validator alteration log not present");
       assert.equal(result.logs[1].event, "Support", "support log not present");
     }).then(function() {
 			return validators.getValidators.call();

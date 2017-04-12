@@ -10,7 +10,7 @@ pragma solidity ^0.4.8;
 
 contract MajorityList {
     // EVENTS
-    event ValidatorSet(bool indexed added, address indexed validator);
+    event ValidatorsChanged(bytes32 indexed parent_hash, uint256 indexed nonce, address[] new_set);
     event Report(address indexed reporter, address indexed reported, bool indexed malicious);
     event Support(address indexed supporter, address indexed supported, bool indexed added);
 
@@ -40,6 +40,10 @@ contract MajorityList {
     uint public constant MAX_VALIDATORS = 30;
     // Time after which the validators will report a validator as malicious.
     uint public constant MAX_INACTIVITY = 6 hours;
+    /// Last block at which the validator set was altered.
+    uint public lastTransitionBlock;
+    /// Number of blocks at which the validators were changed.
+    uint256 public transitionNonce;
     // Current list of addresses entitled to participate in the consensus.
     address[] public validatorsList;
     // Tracker of status for each address.
@@ -67,13 +71,23 @@ contract MajorityList {
                 validatorsStatus[validator].support.voted[supporter] = true;
                 Support(supporter, validator, true);
             }
-            ValidatorSet(true, validator);
+            logTransition();
         }
     }
 
     // Called on every block to update node validator list.
     function getValidators() constant returns (address[]) {
         return validatorsList;
+    }
+
+    function logTransition() private {
+        ValidatorsChanged(block.blockhash(block.number - 1), transitionNonce, validatorsList);
+        incrementTransitionNonce();
+    }
+
+    function incrementTransitionNonce() private on_new_block {
+        lastTransitionBlock = block.number;
+        transitionNonce += 1;
     }
 
     // SUPPORT LOOKUP AND MANIPULATION
@@ -182,7 +196,7 @@ contract MajorityList {
         validatorsStatus[validator].support.votes++;
         validatorsStatus[validator].support.voted[validator] = true;
         validatorsStatus[validator].supported.push(validator);
-        ValidatorSet(true, validator);
+        logTransition();
     }
 
     // Remove a validator without enough support.
@@ -207,7 +221,7 @@ contract MajorityList {
             removeSupport(validator, toRemove[i]);
         }
         delete validatorsStatus[validator].supported;
-        ValidatorSet(false, validator);
+        logTransition();
     }
 
     // MODIFIERS
@@ -273,8 +287,12 @@ contract MajorityList {
             && validatorsStatus[validator].support.voted[sender]) _;
     }
 
+    modifier on_new_block() {
+        if (block.number > lastTransitionBlock) _;
+    }
+
     // Fallback function throws when called.
-    function() {
+    function() payable {
         throw;
     }
 }
