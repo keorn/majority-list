@@ -40,6 +40,8 @@ contract MajorityList {
     uint public constant MAX_VALIDATORS = 30;
     // Time after which the validators will report a validator as malicious.
     uint public constant MAX_INACTIVITY = 6 hours;
+    // Ignore misbehaviour older than this number of blocks.
+    uint public constant RECENT_BLOCKS = 20;
     /// Last block at which the validator set was altered.
     uint public lastTransitionBlock;
     /// Number of blocks at which the validators were changed.
@@ -123,7 +125,7 @@ contract MajorityList {
     // MALICIOUS BEHAVIOUR HANDLING
 
     // Called when a validator should be removed.
-    function reportMalicious(address validator) only_validator {
+    function reportMalicious(address validator, uint blockNumber, bytes proof) only_validator is_recent(blockNumber) {
         removeSupport(msg.sender, validator);
         Report(msg.sender, validator, true);
     }
@@ -131,7 +133,7 @@ contract MajorityList {
     // BENIGN MISBEHAVIOUR HANDLING
 
     // Report that a validator has misbehaved in a benign way.
-    function reportBenign(address validator) only_validator is_validator(validator) {
+    function reportBenign(address validator, uint blockNumber) only_validator is_validator(validator) is_recent(blockNumber) {
         firstBenign(validator);
         repeatedBenign(validator);
         Report(msg.sender, validator, false);
@@ -285,6 +287,11 @@ contract MajorityList {
     modifier has_votes(address sender, address validator) {
         if (validatorsStatus[validator].support.votes > 0
             && validatorsStatus[validator].support.voted[sender]) _;
+    }
+
+    modifier is_recent(uint blockNumber) {
+        if (block.number > blockNumber + RECENT_BLOCKS) { throw; }
+        _;
     }
 
     modifier on_new_block() {

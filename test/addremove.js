@@ -12,7 +12,7 @@ contract('MajorityList', function(accounts) {
 			return validators.addSupport(accounts[0], { "from": accounts[1] });
 		}).then(function(result) {
       assert.equal(result.logs[0].event, "Support", "support log not present");
-			return validators.reportMalicious(accounts[1], { "from": accounts[0] });
+			return validators.reportMalicious(accounts[1], 100, "0x0", { "from": accounts[0] });
     }).then(function(result) {
       assert.equal(result.logs[0].event, "Support", "support log not present");
       assert.equal(result.logs[1].event, "Support", "support log not present");
