@@ -20,20 +20,13 @@ contract MajorityList {
         // Index in the validatorList.
         uint index;
         // Validator addresses which supported the address.
-        VoteTracker support;
+        AddressSet.Data support;
         // Keeps track of the votes given out while the address is a validator.
         address[] supported;
         // Initial benign misbehaviour time tracker.
         mapping(address => uint) firstBenign;
         // Repeated benign misbehaviour counter.
-        VoteTracker benignMisbehaviour;
-    }
-
-    // Tracks the amount of support for a given address.
-    struct VoteTracker {
-        uint votes;
-        // Keeps track of who voted for a given address at a given block, prevent double voting.
-        mapping(address => bool) voted;
+        AddressSet.Data benignMisbehaviour;
     }
 
     // Support can not be added once this number of validators is reached.
@@ -62,15 +55,15 @@ contract MajorityList {
             validatorsStatus[validator] = ValidatorStatus({
                 isValidator: true,
                 index: i,
-                support: VoteTracker({
-                    votes: validatorsList.length
+                support: AddressSet.Data({
+                    count: validatorsList.length
                 }),
                 supported: validatorsList,
-                benignMisbehaviour: VoteTracker({ votes: 0 }),
+                benignMisbehaviour: AddressSet.Data({ count: 0 }),
             });
             for (uint j = 0; j < validatorsList.length; j++) {
                 address supporter = validatorsList[j];
-                validatorsStatus[validator].support.voted[supporter] = true;
+                validatorsStatus[validator].support.inserted[supporter] = true;
                 Support(supporter, validator, true);
             }
             logTransition();
@@ -96,7 +89,7 @@ contract MajorityList {
 
     // Find the total support for a given address.
     function getSupport(address validator) constant returns (uint) {
-        return validatorsStatus[validator].support.votes;
+        return AddressSet.count(validatorsStatus[validator].support);
     }
 
     function getSupported(address validator) constant returns (address[]) {
@@ -106,17 +99,15 @@ contract MajorityList {
     // Vote to include a validator.
     function addSupport(address validator) only_validator not_voted(validator) free_validator_slots {
         newStatus(validator);
-        validatorsStatus[validator].support.votes++;
-        validatorsStatus[validator].support.voted[msg.sender] = true;
+        AddressSet.insert(validatorsStatus[validator].support, msg.sender);
         validatorsStatus[msg.sender].supported.push(validator);
         addValidator(validator);
         Support(msg.sender, validator, true);
     }
 
     // Remove support for a validator.
-    function removeSupport(address sender, address validator) private has_votes(sender, validator) {
-        validatorsStatus[validator].support.votes--;
-        validatorsStatus[validator].support.voted[sender] = false;
+    function removeSupport(address sender, address validator) private {
+        if (!AddressSet.remove(validatorsStatus[validator].support, sender)) { throw; }
         Support(sender, validator, false);
         // Remove validator from the list if there is not enough support.
         removeValidator(validator);
@@ -141,7 +132,7 @@ contract MajorityList {
 
     // Find the total number of repeated misbehaviour votes.
     function getRepeatedBenign(address validator) constant returns (uint) {
-        return validatorsStatus[validator].benignMisbehaviour.votes;
+        return AddressSet.count(validatorsStatus[validator].benignMisbehaviour);
     }
 
     // Track the first benign misbehaviour.
@@ -151,26 +142,21 @@ contract MajorityList {
 
     // Report that a validator has been repeatedly misbehaving.
     function repeatedBenign(address validator) private has_repeatedly_benign_misbehaved(validator) {
-        validatorsStatus[validator].benignMisbehaviour.votes++;
-        validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = true;
+        AddressSet.insert(validatorsStatus[validator].benignMisbehaviour, msg.sender);
         confirmedRepeatedBenign(validator);
     }
 
     // When enough long term benign misbehaviour votes have been seen, remove support.
     function confirmedRepeatedBenign(address validator) private agreed_on_repeated_benign(validator) {
         validatorsStatus[validator].firstBenign[msg.sender] = 0;
-        validatorsStatus[validator].benignMisbehaviour.votes--;
-        validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = false;
+        AddressSet.remove(validatorsStatus[validator].benignMisbehaviour, msg.sender);
         removeSupport(msg.sender, validator);
     }
 
     // Absolve a validator from a benign misbehaviour.
     function absolveFirstBenign(address validator) has_benign_misbehaved(validator) {
         validatorsStatus[validator].firstBenign[msg.sender] = 0;
-        if (validatorsStatus[validator].benignMisbehaviour.voted[msg.sender]) {
-            validatorsStatus[validator].benignMisbehaviour.votes--;
-            validatorsStatus[validator].benignMisbehaviour.voted[msg.sender] = false;
-        }
+        AddressSet.remove(validatorsStatus[validator].benignMisbehaviour, msg.sender);
     }
 
     // PRIVATE UTILITY FUNCTIONS
@@ -180,9 +166,9 @@ contract MajorityList {
         validatorsStatus[validator] = ValidatorStatus({
             isValidator: false,
             index: validatorsList.length,
-            support: VoteTracker({ votes: 0 }),
+            support: AddressSet.Data({ count: 0 }),
             supported: new address[](0),
-            benignMisbehaviour: VoteTracker({ votes: 0 })
+            benignMisbehaviour: AddressSet.Data({ count: 0 })
         });
     }
 
@@ -195,8 +181,7 @@ contract MajorityList {
         validatorsList.push(validator);
         validatorsStatus[validator].isValidator = true;
         // New validator should support itself.
-        validatorsStatus[validator].support.votes++;
-        validatorsStatus[validator].support.voted[validator] = true;
+        AddressSet.insert(validatorsStatus[validator].support, validator);
         validatorsStatus[validator].supported.push(validator);
         logTransition();
     }
@@ -232,8 +217,8 @@ contract MajorityList {
         return getSupport(validator) > validatorsList.length/2;
     }
 
-    function firstBenignReported(address validator) constant returns (uint) {
-        return validatorsStatus[validator].firstBenign[msg.sender];
+    function firstBenignReported(address reporter, address validator) constant returns (uint) {
+        return validatorsStatus[validator].firstBenign[reporter];
     }
 
     modifier has_high_support(address validator) {
@@ -245,15 +230,15 @@ contract MajorityList {
     }
 
     modifier has_not_benign_misbehaved(address validator) {
-        if (firstBenignReported(validator) == 0) _;
+        if (firstBenignReported(msg.sender, validator) == 0) _;
     }
 
     modifier has_benign_misbehaved(address validator) {
-        if (firstBenignReported(validator) > 0) _;
+        if (firstBenignReported(msg.sender, validator) > 0) _;
     }
 
     modifier has_repeatedly_benign_misbehaved(address validator) {
-        if (firstBenignReported(validator) - now > MAX_INACTIVITY) _;
+        if (firstBenignReported(msg.sender, validator) - now > MAX_INACTIVITY) _;
     }
 
     modifier agreed_on_repeated_benign(address validator) {
@@ -277,16 +262,11 @@ contract MajorityList {
     }
 
     modifier not_voted(address validator) {
-        if (validatorsStatus[validator].support.voted[msg.sender]) throw; _;
+        if (AddressSet.contains(validatorsStatus[validator].support, msg.sender)) throw; _;
     }
 
     modifier has_no_votes(address validator) {
-        if (validatorsStatus[validator].support.votes == 0) _;
-    }
-
-    modifier has_votes(address sender, address validator) {
-        if (validatorsStatus[validator].support.votes > 0
-            && validatorsStatus[validator].support.voted[sender]) _;
+        if (AddressSet.count(validatorsStatus[validator].support) == 0) _;
     }
 
     modifier is_recent(uint blockNumber) {
@@ -301,5 +281,36 @@ contract MajorityList {
     // Fallback function throws when called.
     function() payable {
         throw;
+    }
+}
+
+library AddressSet {
+    // Tracks the amount of support for a given address.
+    struct Data {
+        uint count;
+        // Keeps track of who voted for a given address at a given block, prevent double voting.
+        mapping(address => bool) inserted;
+    }
+
+    function count(Data storage self) constant returns (uint) {
+        return self.count;
+    }
+
+    function contains(Data storage self, address voter) returns (bool) {
+        return self.inserted[voter];
+    }
+
+    function insert(Data storage self, address voter) returns (bool) {
+        if (self.inserted[voter]) { return false; }
+        self.count++;
+        self.inserted[voter] = true;
+        return true;
+    }
+
+    function remove(Data storage self, address voter) returns (bool) {
+        if (!self.inserted[voter]) { return false; }
+        self.count--;
+        self.inserted[voter] = false;
+        return true;
     }
 }
