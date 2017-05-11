@@ -44,30 +44,32 @@ contract MajorityList {
     // Tracker of status for each address.
     mapping(address => ValidatorStatus) validatorsStatus;
 
+    // Used to lower the constructor cost.
+    AddressSet.Data initialSupport;
+
     // Each validator is initially supported by all others.
     function MajorityList() {
         validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
 
         if (validatorsList.length > MAX_VALIDATORS) { throw; }
 
+        initialSupport.count = validatorsList.length;
         for (uint i = 0; i < validatorsList.length; i++) {
-            address validator = validatorsList[i];
+            address supporter = validatorsList[i];
+            initialSupport.inserted[supporter] = true;
+        }
+
+        for (uint j = 0; j < validatorsList.length; j++) {
+            address validator = validatorsList[j];
             validatorsStatus[validator] = ValidatorStatus({
                 isValidator: true,
-                index: i,
-                support: AddressSet.Data({
-                    count: validatorsList.length
-                }),
+                index: j,
+                support: initialSupport,
                 supported: validatorsList,
                 benignMisbehaviour: AddressSet.Data({ count: 0 }),
             });
-            for (uint j = 0; j < validatorsList.length; j++) {
-                address supporter = validatorsList[j];
-                validatorsStatus[validator].support.inserted[supporter] = true;
-                Support(supporter, validator, true);
-            }
-            logTransition();
         }
+        logTransition();
     }
 
     // Called on every block to update node validator list.
