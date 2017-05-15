@@ -1,5 +1,12 @@
 pragma solidity ^0.4.8;
 
+contract ValidatorSet {
+    event ValidatorsChanged(bytes32 parent_hash, uint256 nonce, address[] new_set);
+
+    function getValidators() constant returns (address[] validators);
+    function transitionNonce() constant returns (uint256);
+}
+
 // Existing validators can give support to addresses.
 // Support can not be added once MAX_VALIDATORS are present.
 // Once given, support can be removed.
@@ -8,7 +15,7 @@ pragma solidity ^0.4.8;
 // Benign misbehaviour causes supprt removal if its called again after MAX_INACTIVITY.
 // Benign misbehaviour can be absolved before being called the second time.
 
-contract MajorityList {
+contract MajorityList is ValidatorSet {
     // EVENTS
     event ValidatorsChanged(bytes32 indexed parent_hash, uint256 indexed nonce, address[] new_set);
     event Report(address indexed reporter, address indexed reported, bool indexed malicious);
@@ -49,9 +56,7 @@ contract MajorityList {
 
     // Each validator is initially supported by all others.
     function MajorityList() {
-        validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
-
-        if (validatorsList.length > MAX_VALIDATORS) { throw; }
+	validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
 
         initialSupport.count = validatorsList.length;
         for (uint i = 0; i < validatorsList.length; i++) {
@@ -224,51 +229,56 @@ contract MajorityList {
     }
 
     modifier has_high_support(address validator) {
-        if (highSupport(validator)) _;
+        if (highSupport(validator)) { _; }
     }
 
     modifier has_low_support(address validator) {
-        if (!highSupport(validator)) _;
+        if (!highSupport(validator)) { _; }
     }
 
     modifier has_not_benign_misbehaved(address validator) {
-        if (firstBenignReported(msg.sender, validator) == 0) _;
+        if (firstBenignReported(msg.sender, validator) == 0) { _; }
     }
 
     modifier has_benign_misbehaved(address validator) {
-        if (firstBenignReported(msg.sender, validator) > 0) _;
+        if (firstBenignReported(msg.sender, validator) > 0) { _; }
     }
 
     modifier has_repeatedly_benign_misbehaved(address validator) {
-        if (firstBenignReported(msg.sender, validator) - now > MAX_INACTIVITY) _;
+        if (firstBenignReported(msg.sender, validator) - now > MAX_INACTIVITY) { _; }
     }
 
     modifier agreed_on_repeated_benign(address validator) {
-        if (getRepeatedBenign(validator) > validatorsList.length/2) _;
+        if (getRepeatedBenign(validator) > validatorsList.length/2) { _; }
     }
 
     modifier free_validator_slots() {
-        if (validatorsList.length >= MAX_VALIDATORS) throw; _;
+        if (validatorsList.length >= MAX_VALIDATORS) { throw; }
+        _;
     }
 
     modifier only_validator() {
-        if (!validatorsStatus[msg.sender].isValidator) throw; _;
+        if (!validatorsStatus[msg.sender].isValidator) { throw; }
+        _;
     }
 
     modifier is_validator(address someone) {
-        if (validatorsStatus[someone].isValidator) _;
+        if (validatorsStatus[someone].isValidator) { _; }
     }
 
     modifier is_not_validator(address someone) {
-        if (!validatorsStatus[someone].isValidator) _;
+        if (!validatorsStatus[someone].isValidator) { _; }
     }
 
     modifier not_voted(address validator) {
-        if (AddressSet.contains(validatorsStatus[validator].support, msg.sender)) throw; _;
+        if (AddressSet.contains(validatorsStatus[validator].support, msg.sender)) {
+            throw;
+        }
+        _;
     }
 
     modifier has_no_votes(address validator) {
-        if (AddressSet.count(validatorsStatus[validator].support) == 0) _;
+        if (AddressSet.count(validatorsStatus[validator].support) == 0) { _; }
     }
 
     modifier is_recent(uint blockNumber) {
@@ -277,7 +287,7 @@ contract MajorityList {
     }
 
     modifier on_new_block() {
-        if (block.number > lastTransitionBlock) _;
+        if (block.number > lastTransitionBlock) { _; }
     }
 
     // Fallback function throws when called.
