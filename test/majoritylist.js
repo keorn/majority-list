@@ -44,15 +44,15 @@ contract('MajorityList', function(accounts) {
   });
 
   it("should add a supported address", function() {
-		var validators;
+    var validators;
     return MajorityList.deployed().then(function(instance) {
-			validators = instance;
+      validators = instance;
       return validators.addSupport(accounts[1]);
     }).then(function(result) {
-      assert.equal(result.logs[0].event, "ValidatorsChanged", "validator alteration log not present");
+      assert.equal(result.logs[0].event, "InitiateChange", "validator alteration log not present");
       assert.equal(result.logs[1].event, "Support", "support log not present");
     }).then(function() {
-			return validators.getValidators.call();
+      return validators.getValidators.call();
 		}).then(function(list) {
 			assert.equal(list.valueOf()[1], accounts[1], "second validator not present");
 		}).then(function() {

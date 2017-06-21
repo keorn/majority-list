@@ -17,7 +17,8 @@ contract('MajorityList', function(accounts) {
       assert.equal(result.logs[0].event, "Support", "support log not present");
       assert.equal(result.logs[1].event, "Support", "support log not present");
       assert.equal(result.logs[2].event, "Support", "support log not present");
-      assert.equal(result.logs[3].event, "ValidatorsChanged", "validator alteration log not present");
+      assert.equal(result.logs[3].event, "InitiateChange", "validator alteration log not present");
+      assert.equal(result.logs[4].event, "Report", "report log not present");
       return validators.getSupport.call(accounts[0]);
     }).then(function(result) {
       assert.equal(result.toNumber(), 1, "first should support itself");

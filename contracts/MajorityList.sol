@@ -1,10 +1,10 @@
 pragma solidity ^0.4.8;
 
 contract ValidatorSet {
-    event ValidatorsChanged(bytes32 parent_hash, uint256 nonce, address[] new_set);
+    event InitiateChange(bytes32 indexed _parent_hash, address[] _new_set);
 
-    function getValidators() constant returns (address[] validators);
-    function transitionNonce() constant returns (uint256);
+    function getValidators() constant returns (address[] _validators);
+    function finalizeChange();
 }
 
 // Existing validators can give support to addresses.
@@ -17,7 +17,6 @@ contract ValidatorSet {
 
 contract MajorityList is ValidatorSet {
     // EVENTS
-    event ValidatorsChanged(bytes32 indexed parent_hash, uint256 indexed nonce, address[] new_set);
     event Report(address indexed reporter, address indexed reported, bool indexed malicious);
     event Support(address indexed supporter, address indexed supported, bool indexed added);
 
@@ -44,10 +43,10 @@ contract MajorityList is ValidatorSet {
     uint public constant RECENT_BLOCKS = 20;
     /// Last block at which the validator set was altered.
     uint public lastTransitionBlock;
-    /// Number of blocks at which the validators were changed.
-    uint256 public transitionNonce;
     // Current list of addresses entitled to participate in the consensus.
     address[] public validatorsList;
+    // Pending list of validator addresses.
+    address[] pendingList;
     // Tracker of status for each address.
     mapping(address => ValidatorStatus) validatorsStatus;
 
@@ -56,7 +55,7 @@ contract MajorityList is ValidatorSet {
 
     // Each validator is initially supported by all others.
     function MajorityList() {
-	validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
+        validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
 
         initialSupport.count = validatorsList.length;
         for (uint i = 0; i < validatorsList.length; i++) {
@@ -74,7 +73,7 @@ contract MajorityList is ValidatorSet {
                 benignMisbehaviour: AddressSet.Data({ count: 0 }),
             });
         }
-        logTransition();
+        initiateChange();
     }
 
     // Called on every block to update node validator list.
@@ -82,14 +81,14 @@ contract MajorityList is ValidatorSet {
         return validatorsList;
     }
 
-    function logTransition() private {
-        incrementTransitionNonce();
-        ValidatorsChanged(block.blockhash(block.number - 1), transitionNonce, validatorsList);
+    // Log desire to change the current list.
+    function initiateChange() private {
+        InitiateChange(block.blockhash(block.number - 1), pendingList);
     }
 
-    function incrementTransitionNonce() private on_new_block {
-        lastTransitionBlock = block.number;
-        transitionNonce += 1;
+    function finalizeChange() only_system_and_has_pending {
+        validatorsList = pendingList;
+        pendingList.length = 0;
     }
 
     // SUPPORT LOOKUP AND MANIPULATION
@@ -190,7 +189,7 @@ contract MajorityList is ValidatorSet {
         // New validator should support itself.
         AddressSet.insert(validatorsStatus[validator].support, validator);
         validatorsStatus[validator].supported.push(validator);
-        logTransition();
+        initiateChange();
     }
 
     // Remove a validator without enough support.
@@ -215,7 +214,7 @@ contract MajorityList is ValidatorSet {
             removeSupport(validator, toRemove[i]);
         }
         delete validatorsStatus[validator].supported;
-        logTransition();
+        initiateChange();
     }
 
     // MODIFIERS
@@ -290,17 +289,22 @@ contract MajorityList is ValidatorSet {
         if (block.number > lastTransitionBlock) { _; }
     }
 
+    modifier only_system_and_has_pending() {
+        if (msg.sender != 2**160 - 2 || pendingList.length == 0) { throw; }
+        _;
+    }
+
     // Fallback function throws when called.
-    function() payable {
+    function() {
         throw;
     }
 }
 
 library AddressSet {
-    // Tracks the amount of support for a given address.
+    // Tracks the number of votes from different addresses.
     struct Data {
         uint count;
-        // Keeps track of who voted for a given address at a given block, prevent double voting.
+        // Keeps track of who voted, prevents double vote.
         mapping(address => bool) inserted;
     }
 
