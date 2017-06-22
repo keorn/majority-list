@@ -44,8 +44,6 @@ contract MajorityList is ValidatorSet {
     uint public constant MAX_INACTIVITY = 6 hours;
     // Ignore misbehaviour older than this number of blocks.
     uint public constant RECENT_BLOCKS = 20;
-    /// Last block at which the validator set was altered.
-    uint public lastTransitionBlock;
     // Current list of addresses entitled to participate in the consensus.
     address[] public validatorsList;
     // Pending list of validator addresses.
