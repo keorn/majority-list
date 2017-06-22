@@ -51,19 +51,21 @@ contract('MajorityList', function(accounts) {
     }).then(function(result) {
       assert.equal(result.logs[0].event, "InitiateChange", "validator alteration log not present");
       assert.equal(result.logs[1].event, "Support", "support log not present");
-    }).then(function() {
+      return validators.finalizeChange({ "from": accounts[0] });
+    }).then(function(log) {
+      assert.equal(log.logs[0].event, "ChangeFinalized", "change was not finalized");
       return validators.getValidators.call();
-		}).then(function(list) {
-			assert.equal(list.valueOf()[1], accounts[1], "second validator not present");
-		}).then(function() {
-			return validators.getSupport.call(accounts[1]);
-		}).then(function(support) {
-			assert.equal(support.toNumber(), 2, "second validator should support itself");
-		}).then(function() {
-			return validators.getSupport.call(accounts[0]);
-		}).then(function(support) {
-			assert.equal(support.toNumber(), 1, "first validator should not be supported by the added validator");
-		});
+    }).then(function(list) {
+      assert.equal(list.valueOf()[1], accounts[1], "second validator not present");
+    }).then(function() {
+      return validators.getSupport.call(accounts[1]);
+    }).then(function(support) {
+      assert.equal(support.toNumber(), 2, "second validator should support itself");
+    }).then(function() {
+      return validators.getSupport.call(accounts[0]);
+    }).then(function(support) {
+      assert.equal(support.toNumber(), 1, "first validator should not be supported by the added validator");
+    });
   });
 
   it("should event on benign misbehaviour report", function() {

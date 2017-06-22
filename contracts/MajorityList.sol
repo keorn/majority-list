@@ -19,6 +19,7 @@ contract MajorityList is ValidatorSet {
     // EVENTS
     event Report(address indexed reporter, address indexed reported, bool indexed malicious);
     event Support(address indexed supporter, address indexed supported, bool indexed added);
+    event ChangeFinalized(address[] current_set);
 
     struct ValidatorStatus {
         // Is this a validator.
@@ -35,6 +36,8 @@ contract MajorityList is ValidatorSet {
         AddressSet.Data benignMisbehaviour;
     }
 
+    // System address, used by the block sealer.
+    address SYSTEM_ADDRESS = 0xf5777f8133aae2734396ab1d43ca54ad11bfb737;//2**160 - 2;
     // Support can not be added once this number of validators is reached.
     uint public constant MAX_VALIDATORS = 30;
     // Time after which the validators will report a validator as malicious.
@@ -47,6 +50,8 @@ contract MajorityList is ValidatorSet {
     address[] public validatorsList;
     // Pending list of validator addresses.
     address[] pendingList;
+    // Was the last validator change finalized.
+    bool finalized;
     // Tracker of status for each address.
     mapping(address => ValidatorStatus) validatorsStatus;
 
@@ -55,25 +60,26 @@ contract MajorityList is ValidatorSet {
 
     // Each validator is initially supported by all others.
     function MajorityList() {
-        validatorsList.push(0xF5777f8133aAe2734396ab1d43ca54aD11BFB737);
+        pendingList.push(0xf5777f8133aae2734396ab1d43ca54ad11bfb737);
 
-        initialSupport.count = validatorsList.length;
-        for (uint i = 0; i < validatorsList.length; i++) {
-            address supporter = validatorsList[i];
+        initialSupport.count = pendingList.length;
+        for (uint i = 0; i < pendingList.length; i++) {
+            address supporter = pendingList[i];
             initialSupport.inserted[supporter] = true;
         }
 
-        for (uint j = 0; j < validatorsList.length; j++) {
-            address validator = validatorsList[j];
+        for (uint j = 0; j < pendingList.length; j++) {
+            address validator = pendingList[j];
             validatorsStatus[validator] = ValidatorStatus({
                 isValidator: true,
                 index: j,
                 support: initialSupport,
-                supported: validatorsList,
+                supported: pendingList,
                 benignMisbehaviour: AddressSet.Data({ count: 0 }),
             });
         }
-        initiateChange();
+        validatorsList = pendingList;
+        finalized = true;
     }
 
     // Called on every block to update node validator list.
@@ -82,13 +88,15 @@ contract MajorityList is ValidatorSet {
     }
 
     // Log desire to change the current list.
-    function initiateChange() private {
+    function initiateChange() private when_finalized {
+        finalized = false;
         InitiateChange(block.blockhash(block.number - 1), pendingList);
     }
 
-    function finalizeChange() only_system_and_has_pending {
+    function finalizeChange() only_system_and_not_finalized {
         validatorsList = pendingList;
-        pendingList.length = 0;
+        finalized = true;
+        ChangeFinalized(validatorsList);
     }
 
     // SUPPORT LOOKUP AND MANIPULATION
@@ -171,7 +179,7 @@ contract MajorityList is ValidatorSet {
     function newStatus(address validator) private has_no_votes(validator) {
         validatorsStatus[validator] = ValidatorStatus({
             isValidator: false,
-            index: validatorsList.length,
+            index: pendingList.length,
             support: AddressSet.Data({ count: 0 }),
             supported: new address[](0),
             benignMisbehaviour: AddressSet.Data({ count: 0 })
@@ -183,8 +191,8 @@ contract MajorityList is ValidatorSet {
     // Add the validator if supported by majority.
     // Since the number of validators increases it is possible to some fall below the threshold.
     function addValidator(address validator) is_not_validator(validator) has_high_support(validator) {
-        validatorsStatus[validator].index = validatorsList.length;
-        validatorsList.push(validator);
+        validatorsStatus[validator].index = pendingList.length;
+        pendingList.push(validator);
         validatorsStatus[validator].isValidator = true;
         // New validator should support itself.
         AddressSet.insert(validatorsStatus[validator].support, validator);
@@ -197,14 +205,14 @@ contract MajorityList is ValidatorSet {
     function removeValidator(address validator) is_validator(validator) has_low_support(validator) {
         uint removedIndex = validatorsStatus[validator].index;
         // Can not remove the last validator.
-        uint lastIndex = validatorsList.length-1;
-        address lastValidator = validatorsList[lastIndex];
+        uint lastIndex = pendingList.length-1;
+        address lastValidator = pendingList[lastIndex];
         // Override the removed validator with the last one.
-        validatorsList[removedIndex] = lastValidator;
+        pendingList[removedIndex] = lastValidator;
         // Update the index of the last validator.
         validatorsStatus[lastValidator].index = removedIndex;
-        delete validatorsList[lastIndex];
-        validatorsList.length--;
+        delete pendingList[lastIndex];
+        pendingList.length--;
         // Reset validator status.
         validatorsStatus[validator].index = 0;
         validatorsStatus[validator].isValidator = false;
@@ -220,7 +228,7 @@ contract MajorityList is ValidatorSet {
     // MODIFIERS
 
     function highSupport(address validator) constant returns (bool) {
-        return getSupport(validator) > validatorsList.length/2;
+        return getSupport(validator) > pendingList.length/2;
     }
 
     function firstBenignReported(address reporter, address validator) constant returns (uint) {
@@ -248,11 +256,11 @@ contract MajorityList is ValidatorSet {
     }
 
     modifier agreed_on_repeated_benign(address validator) {
-        if (getRepeatedBenign(validator) > validatorsList.length/2) { _; }
+        if (getRepeatedBenign(validator) > pendingList.length/2) { _; }
     }
 
     modifier free_validator_slots() {
-        if (validatorsList.length >= MAX_VALIDATORS) { throw; }
+        if (pendingList.length >= MAX_VALIDATORS) { throw; }
         _;
     }
 
@@ -285,12 +293,13 @@ contract MajorityList is ValidatorSet {
         _;
     }
 
-    modifier on_new_block() {
-        if (block.number > lastTransitionBlock) { _; }
+    modifier only_system_and_not_finalized() {
+        if (msg.sender != SYSTEM_ADDRESS || finalized) { throw; }
+        _;
     }
 
-    modifier only_system_and_has_pending() {
-        if (msg.sender != 2**160 - 2 || pendingList.length == 0) { throw; }
+    modifier when_finalized() {
+        if (!finalized) { throw; }
         _;
     }
 
